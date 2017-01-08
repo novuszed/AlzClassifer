@@ -10,8 +10,10 @@ import matplotlib.pyplot as plt
 import tarfile
 import re
 import shutil
+import collections
 import errno
 from PIL import Image
+from PIL import ImageOps
 
 sessionBuckets = [range(1, 43), range(43, 81), range(81, 116), range(116, 151), range(151, 192), range(192, 232),
                   range(232, 273), range(273, 310), range(310, 349), range(349, 383), range(383, 420), range(420, 458)]
@@ -127,6 +129,32 @@ def genderVisual(df):
             os.makedirs(os.getcwd() + '/Graphs')
         plt.savefig('%s/Graphs/genderSplit.png' % os.getcwd())
 
+#Generate graph comparing dementia rate and age
+def AgeVsDementia(df):
+    AgeVsDemen = dict()
+    for index,row in df.iterrows():
+        if row['DementiaScale']>=0.5:
+            AgeVsDemen[row['Age']]=AgeVsDemen.get(row['Age'],1)+1
+
+
+    AgeVsDemen = collections.OrderedDict(sorted(AgeVsDemen.items()))
+
+    AgeVD=list(AgeVsDemen.items())
+
+    Ages = tuple(a[0] for a in AgeVD)
+    DementiaCounts = tuple(a[1] for a in AgeVD)
+
+    N = np.arange(len(Ages))
+    plt.bar(N,DementiaCounts,align='center', alpha=0.5)
+    plt.xticks(N, Ages)
+    plt.ylabel("# of those with dementia")
+    plt.xlabel("Ages")
+    plt.title("# Of patients with dementia vs age")
+    plt.show()
+
+    if not os.path.exists(os.getcwd() + '/Graphs'):
+        os.makedirs(os.getcwd() + '/Graphs')
+    plt.savefig('%s/Graphs/AgeDementia.png' % os.getcwd())
 
 # Clean up folders to save spaces after extracting needed images
 def cleanUpFolders():
@@ -136,7 +164,7 @@ def cleanUpFolders():
             print("Removing path %s " % path)
             shutil.rmtree(path)
 
-
+# Clean up all the GZ files to save room
 def cleanUpGz(tarName):
     tarFiles = set([f for f in os.listdir(os.getcwd()) if
                     os.path.isfile(f) and tarName in f and (f.endswith("tar.gz") or f.endswith("tar"))])
@@ -147,7 +175,7 @@ def cleanUpGz(tarName):
         except:
             raise ("Can't delete GZ files")
 
-
+#Converting png files to jpg files. Tensorflow prefers Jpg
 def pngToJpg():
     path = os.getcwd() + "/tf_files/alzClass/"
     if os.path.exists(path + ".DS_Store"):
@@ -166,7 +194,7 @@ def pngToJpg():
             img = Image.open(path + image)
             img.save(path + img[:-3] + "jpeg")
 
-
+#Convert png files to Gif files, converting it back to compare learning rate between png and jpeg
 def pngToGif():
     path = os.getcwd() + "/tf_files/alzClass/"
     if os.path.exists(path + ".DS_Store"):
@@ -211,10 +239,12 @@ def extractGifFrame():
             if not image.endswith("gif"):
                 continue
             im = Image.open(path + image)
-            bg = Image.new("RGB", im.size, (255, 255, 255))
-            bg.paste(im, (0, 0), im)
+            bg= ImageOps.invert(im)
+
+            #bg = Image.new("RGB", im.size, (255, 255, 255))
+            #bg.paste(im, (0, 0), im)
             newPath = path + image
-            bg.save(newPath[:-3] + "jpg", quality=95)
+            bg.save(newPath[:-3] + "jpg")
 
     path = os.getcwd()+"/tf_files/NoAlzClass/"
     if os.path.exists(path + ".DS_Store"):
@@ -224,11 +254,13 @@ def extractGifFrame():
             if not image.endswith("gif"):
                 continue
             im = Image.open(path + image)
-            bg = Image.new("RGB", im.size, (255, 255, 255))
-            bg.paste(im, (0, 0), im)
-            newPath = path + image
-            bg.save(newPath[:-3] + "jpg", quality=95)
+            bg= ImageOps.invert(im)
 
+            #bg = Image.new("RGB", im.size, (255, 255, 255))
+            #bg.paste(im, (0, 0), im)
+            newPath = path + image
+            bg.save(newPath[:-3] + "jpg")
+"""
     path = os.getcwd()+"/Verification/Alz/"
     if os.path.exists(path + ".DS_Store"):
         os.remove(path + ".DS_Store")
@@ -240,7 +272,7 @@ def extractGifFrame():
             bg = Image.new("RGB", im.size, (255, 255, 255))
             bg.paste(im, (0, 0), im)
             newPath = path + image
-            bg.save(newPath[:-3] + "jpg", quality=95)
+            bg.save(newPath[:-3] + "jpg", quality=99)
 
 
     path = os.getcwd()+"/Verification/NoAlz/"
@@ -254,7 +286,8 @@ def extractGifFrame():
             bg = Image.new("RGB", im.size, (255, 255, 255))
             bg.paste(im, (0, 0), im)
             newPath = path + image
-            bg.save(newPath[:-3] + "jpg", quality=95)
+            bg.save(newPath[:-3] + "jpg", quality=99)
+"""
 #Use disc12 for inspection of training accuracy
 def testAccuracy(df):
     dementiaPatients = df[(df.DementiaScale>=0.5)]
@@ -473,6 +506,7 @@ def removeOASFolders():
         if "OAS1_" in folder and ("MR1" in folder or "MR2" in folder):
             shutil.rmtree(folder)
 
+#Parsing the original CSV with patient data
 def parsePatientCSV():
     headerLegend = "MR Session,Subject,M/F,Hand,Age,Educ,SES,CDR,MMSE,eTIV,nWBV,ASF,Scans"
     # print(headerLegend.split(","))
@@ -488,25 +522,53 @@ def parsePatientCSV():
     df['DementiaScale'].fillna(value=0, inplace=True)
     return df
 
+#Convert everything to jpeg before training
+def classifyJpeg(dataframe):
+    unzip(tarFileName)
+    extractPhotos()
+
+    separatePatients(dataframe)
+    extractForTfFiles()
+    extractNoAlzForTfFiles()
+    testAccuracy(dataframe)
+    pngToGif()
+    extractGifFrame()
+    cleanGifFiles()
+
+#Function that bundels clean up
+def cleanUp():
+    cleanUpGz(tarFileName)
+    cleanUpFolders()
+    removeOASFolders()
+
+#Convert everything to png and run tests
+def classifyPng(dataframe):
+    unzip(tarFileName)
+    extractPhotos()
+
+    separatePatients(dataframe)
+    extractForTfFiles()
+    extractNoAlzForTfFiles()
+    testAccuracy(dataframe)
+
+def convertPngToJpeg():
+    extractForTfFiles()
+    extractNoAlzForTfFiles()
+    pngToGif()
+    extractGifFrame()
+    cleanGifFiles()
+
 dataframe = parsePatientCSV()
+#cleanUp()
+#classifyPng(dataframe)
+convertPngToJpeg()
 
-#print(dataframe)
-
-
-#unzip(tarFileName)
-
+#AgeVsDementia(dataframe)
 # genderVisual(df)
 # downloadImagesGz("test")
 
-#extractPhotos()
+#print(dataframe)
 
-# cleanUpGz(tarFileName)
-# cleanUpFolders()
-
-#separatePatients(dataframe)
-#extractForTfFiles()
-#extractNoAlzForTfFiles()
-#testAccuracy(dataframe)
 """
 Old way of dealing with CSV
 with open(csvFileName, newline='') as patientList:
@@ -520,7 +582,7 @@ with open(csvFileName, newline='') as patientList:
 #pngToJpg()
 #pngToGif()
 #extractGifFrame()
-cleanGifFiles()
+#cleanGifFiles()
 # downloadImages()
 
 #removeOASFolders()
